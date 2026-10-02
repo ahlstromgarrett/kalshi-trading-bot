@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+.env
+*.pem
+*.key
+logs/
+*.log
+.DS_Store
+ledger.db
+ledger.db-*
+paper_state.json
+Claude Algo.txt

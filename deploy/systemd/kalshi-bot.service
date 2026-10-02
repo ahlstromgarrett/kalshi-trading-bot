@@ -1,0 +1,15 @@
+[Unit]
+Description=Kalshi trading bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kalshi
+WorkingDirectory=/opt/kalshi
+ExecStart=/opt/kalshi/.venv/bin/python3 /opt/kalshi/main.py --mode paper --interval 30
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

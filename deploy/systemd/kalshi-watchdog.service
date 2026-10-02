@@ -1,0 +1,7 @@
+[Unit]
+Description=Kalshi watchdog (one-shot, fired by kalshi-watchdog.timer)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/kalshi
+ExecStart=/bin/bash /opt/kalshi/deploy/watchdog_linux.sh

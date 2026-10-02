@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kalshi Trading Dashboard</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #131722;
+    --panel-border: #232838;
+    --text: #e6e8ee;
+    --text-dim: #8b93a7;
+    --accent: #5b8cff;
+    --green: #29c48a;
+    --red: #ef5b6b;
+    --amber: #e0a63a;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f5f8;
+      --panel: #ffffff;
+      --panel-border: #e2e5ec;
+      --text: #1a1d29;
+      --text-dim: #676f85;
+      --accent: #3b66d6;
+      --green: #1c9d6f;
+      --red: #d3384b;
+      --amber: #b5811c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 24px; max-width: 1200px; margin-inline: auto;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  .subtitle { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 20px; }
+  .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  select, button, input {
+    background: var(--panel); color: var(--text); border: 1px solid var(--panel-border);
+    border-radius: 6px; padding: 6px 10px; font-size: 0.85rem;
+  }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: white; border: none; }
+  .kpi-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px; margin-bottom: 24px;
+  }
+  .kpi {
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .kpi .label { font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; }
+  .kpi .value { font-size: 1.4rem; font-variant-numeric: tabular-nums; margin-top: 4px; font-weight: 600; }
+  .pos { color: var(--green); }
+  .neg { color: var(--red); }
+  .panel {
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px;
+    padding: 16px; margin-bottom: 20px; overflow-x: auto;
+  }
+  .panel h2 { font-size: 0.95rem; margin: 0 0 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; white-space: nowrap; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--panel-border); }
+  th { color: var(--text-dim); font-weight: 500; font-size: 0.72rem; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ticker-sub { white-space: nowrap; font-size: 0.72rem; color: var(--text-dim); margin-top: 2px; }
+  #tradeTableWrap td:nth-child(3) { white-space: normal; max-width: 320px; }
+  .status-pill {
+    padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 600;
+  }
+  .status-Won { background: color-mix(in srgb, var(--green) 20%, transparent); color: var(--green); }
+  .status-Lost { background: color-mix(in srgb, var(--red) 20%, transparent); color: var(--red); }
+  .status-Open { background: color-mix(in srgb, var(--amber) 20%, transparent); color: var(--amber); }
+  .status-Cashed { background: color-mix(in srgb, var(--text-dim) 20%, transparent); color: var(--text-dim); }
+  svg#balanceChart { width: 100%; height: 200px; }
+  .empty { color: var(--text-dim); font-size: 0.85rem; padding: 12px 0; }
+  .deposit-form { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  .deposit-form input[type="number"] { width: 100px; }
+</style>
+</head>
+<body>
+
+<h1>Kalshi Trading Dashboard</h1>
+<div class="subtitle">Auto-refreshes every 15s. All figures computed from ledger.db (Trade Log + Deposits), same as your spreadsheet.</div>
+
+<div class="toolbar">
+  <label>Mode:
+    <select id="modeFilter">
+      <option value="">All</option>
+      <option value="paper">Paper</option>
+      <option value="live">Live</option>
+    </select>
+  </label>
+  <button id="refreshBtn">Refresh now</button>
+</div>
+
+<div class="kpi-grid" id="kpiGrid"></div>
+
+<div class="panel">
+  <h2>Cumulative Balance</h2>
+  <svg id="balanceChart" viewBox="0 0 600 200" preserveAspectRatio="none"></svg>
+</div>
+
+<div class="panel">
+  <h2>Daily Summary</h2>
+  <div id="dailyTableWrap"></div>
+</div>
+
+<div class="panel">
+  <h2>Trade Log</h2>
+  <div id="tradeTableWrap"></div>
+</div>
+
+<div class="panel">
+  <h2>Deposits</h2>
+  <div id="depositsTableWrap"></div>
+  <div class="deposit-form">
+    <input type="number" id="depositAmount" placeholder="Amount" step="0.01">
+    <input type="text" id="depositSource" placeholder="Source (optional)">
+    <button class="primary" id="addDepositBtn">Add deposit</button>
+  </div>
+</div>
+
+<script>
+const escapeHtml = (s) => (s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtMoney = (v) => v == null ? '—' : (v < 0 ? '-$' + Math.abs(v).toFixed(2) : '$' + v.toFixed(2));
+const fmtPct = (v) => v == null ? '—' : (v * 100).toFixed(1) + '%';
+const pnlClass = (v) => v == null ? '' : (v >= 0 ? 'pos' : 'neg');
+const statusClass = (s) => 'status-' + (s === 'Cashed Out' ? 'Cashed' : s);
+
+function currentMode() {
+  return document.getElementById('modeFilter').value;
+}
+
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+function renderKPIs(stats) {
+  const cards = [
+    ['Current Balance', fmtMoney(stats.current_balance), null],
+    ['Total Deposited', fmtMoney(stats.total_deposited), null],
+    ['Total Trading Profit', fmtMoney(stats.total_trading_profit), pnlClass(stats.total_trading_profit)],
+    ['Overall Return', fmtPct(stats.overall_return_pct), pnlClass(stats.overall_return_pct)],
+    ['Win Rate', fmtPct(stats.overall_win_rate), null],
+    ['Trades Logged', stats.total_trades_logged, null],
+    ['Open Positions', stats.open, null],
+    ['Won / Lost / Cashed', `${stats.won} / ${stats.lost} / ${stats.cashed_out}`, null],
+    ['Avg Win', fmtMoney(stats.avg_win_dollars), 'pos'],
+    ['Avg Loss', fmtMoney(stats.avg_loss_dollars), 'neg'],
+    ['Avg Target Probability', fmtPct(stats.avg_target_probability), null],
+    ['Avg Daily Return', fmtPct(stats.avg_daily_return_pct), pnlClass(stats.avg_daily_return_pct)],
+    ['Days Active', stats.days_active, null],
+  ];
+  const grid = document.getElementById('kpiGrid');
+  grid.innerHTML = cards.map(([label, value, cls]) => `
+    <div class="kpi">
+      <div class="label">${label}</div>
+      <div class="value ${cls || ''}">${value}</div>
+    </div>
+  `).join('');
+}
+
+function renderChart(daily) {
+  const svg = document.getElementById('balanceChart');
+  if (!daily.length) { svg.innerHTML = ''; return; }
+
+  // Two points per day (start -> end), not one -- a day that moved from
+  // $47.12 to $43.66 should show as a slope, not get collapsed into a
+  // single flat endpoint that hides the day's whole move.
+  const points_ = daily.flatMap(d => [
+    {value: d.starting_balance, label: `${d.date} start`},
+    {value: d.ending_balance, label: `${d.date} end`},
+  ]);
+  const balances = points_.map(p => p.value);
+  const w = 600, h = 200, padX = 10, padTop = 24, padBottom = 28;
+
+  // Zoom to the actual data range (not anchored to $0) so small moves are
+  // visible, with a floor so a perfectly flat stretch still draws a
+  // readable line instead of collapsing to zero-height.
+  const dataMin = Math.min(...balances);
+  const dataMax = Math.max(...balances);
+  const spread = Math.max(dataMax - dataMin, Math.max(Math.abs(dataMax), 1) * 0.02);
+  const min = dataMin - spread * 0.15;
+  const max = dataMax + spread * 0.15;
+  const range = (max - min) || 1;
+
+  const plotH = h - padTop - padBottom;
+  const toXY = (b, i) => {
+    const x = balances.length > 1 ? padX + i * (w - 2 * padX) / (balances.length - 1) : w / 2;
+    const y = padTop + plotH - ((b - min) / range) * plotH;
+    return [x, y];
+  };
+  const coords = balances.map(toXY);
+  const points = coords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const areaPoints = `${coords[0][0].toFixed(1)},${padTop + plotH} ${points} ${coords[coords.length - 1][0].toFixed(1)},${padTop + plotH}`;
+  const dots = coords.map(([x, y]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="var(--accent)"></circle>`).join('');
+
+  svg.innerHTML = `
+    <polygon points="${areaPoints}" fill="var(--accent)" opacity="0.12"></polygon>
+    <polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="2"></polyline>
+    ${dots}
+    <text x="${padX}" y="14" font-size="11" fill="var(--text-dim)">${fmtMoney(dataMax)}</text>
+    <text x="${w - padX}" y="14" font-size="11" fill="var(--text-dim)" text-anchor="end">${daily[daily.length - 1].date}</text>
+    <text x="${padX}" y="${h - 8}" font-size="11" fill="var(--text-dim)">${daily[0].date}</text>
+    <text x="${w - padX}" y="${h - 8}" font-size="11" fill="var(--text-dim)" text-anchor="end">${fmtMoney(dataMin)}</text>
+  `;
+}
+
+function renderDailyTable(daily) {
+  const wrap = document.getElementById('dailyTableWrap');
+  if (!daily.length) { wrap.innerHTML = '<div class="empty">No trades yet.</div>'; return; }
+  wrap.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Date</th><th class="num">Trades</th><th class="num">Wins</th><th class="num">Losses</th>
+        <th class="num">Win Rate</th><th class="num">Daily P&amp;L</th><th class="num">Ending Balance</th>
+      </tr></thead>
+      <tbody>
+        ${daily.slice().reverse().map(d => `
+          <tr>
+            <td>${d.date}</td>
+            <td class="num">${d.trades_that_day}</td>
+            <td class="num">${d.wins_that_day}</td>
+            <td class="num">${d.losses_that_day}</td>
+            <td class="num">${fmtPct(d.win_rate_that_day)}</td>
+            <td class="num ${pnlClass(d.daily_pnl)}">${fmtMoney(d.daily_pnl)}</td>
+            <td class="num">${fmtMoney(d.ending_balance)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderTradeTable(trades) {
+  const wrap = document.getElementById('tradeTableWrap');
+  if (!trades.length) { wrap.innerHTML = '<div class="empty">No trades yet.</div>'; return; }
+  wrap.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>#</th><th>Opened</th><th>Market</th><th>Side</th><th class="num">Target Prob</th>
+        <th class="num">Count</th><th class="num">Cost</th><th class="num">Payout</th>
+        <th>Status</th><th class="num">P&amp;L</th><th class="num">Return</th>
+      </tr></thead>
+      <tbody>
+        ${trades.map(t => `
+          <tr>
+            <td>${t.id}</td>
+            <td>${(t.opened_at || '').replace('T', ' ').slice(0, 16)}</td>
+            <td>${escapeHtml(t.market_title || t.ticker)}<div class="ticker-sub">${escapeHtml(t.ticker)}</div></td>
+            <td>${t.side === 'bid' ? 'Buy Yes' : 'Buy No'}</td>
+            <td class="num">${fmtPct(t.target_probability)}</td>
+            <td class="num">${t.count}</td>
+            <td class="num">${fmtMoney(t.cost)}</td>
+            <td class="num">${fmtMoney(t.payout)}</td>
+            <td><span class="status-pill ${statusClass(t.status)}">${t.status}</span></td>
+            <td class="num ${pnlClass(t.pnl)}">${fmtMoney(t.pnl)}</td>
+            <td class="num ${pnlClass(t.return_pct)}">${fmtPct(t.return_pct)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderDepositsTable(deposits) {
+  const wrap = document.getElementById('depositsTableWrap');
+  if (!deposits.length) { wrap.innerHTML = '<div class="empty">No deposits logged yet.</div>'; return; }
+  wrap.innerHTML = `
+    <table>
+      <thead><tr><th>Date</th><th class="num">Amount</th><th>Source</th></tr></thead>
+      <tbody>
+        ${deposits.map(d => `
+          <tr>
+            <td>${(d.date || '').replace('T', ' ').slice(0, 16)}</td>
+            <td class="num">${fmtMoney(d.amount)}</td>
+            <td>${d.source || ''}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function refresh() {
+  const mode = currentMode();
+  const q = mode ? `?mode=${mode}` : '';
+  const [stats, daily, trades, deposits] = await Promise.all([
+    fetchJSON(`/api/dashboard${q}`),
+    fetchJSON(`/api/daily${q}`),
+    fetchJSON(`/api/trades${q}`),
+    fetchJSON(`/api/deposits${q}`),
+  ]);
+  renderKPIs(stats);
+  renderChart(daily);
+  renderDailyTable(daily);
+  renderTradeTable(trades);
+  renderDepositsTable(deposits);
+}
+
+document.getElementById('refreshBtn').addEventListener('click', refresh);
+document.getElementById('modeFilter').addEventListener('change', refresh);
+document.getElementById('addDepositBtn').addEventListener('click', async () => {
+  const amount = parseFloat(document.getElementById('depositAmount').value);
+  if (!amount) return;
+  const source = document.getElementById('depositSource').value;
+  await fetch('/api/deposits', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({amount, source}),
+  });
+  document.getElementById('depositAmount').value = '';
+  document.getElementById('depositSource').value = '';
+  refresh();
+});
+
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>
